@@ -1,2 +1,81 @@
-# Auto detect text files and perform LF normalization
-* text=auto
+.include "M328PDEF.inc"
+.cseg
+.org 0x00
+;*****************************************************************************************************
+; Stack
+;*****************************************************************************************************
+LDI R16, LOW(RAMEND)
+OUT SPL, R16
+LDI R17, HIGH(RAMEND)
+OUT SPH, R17
+;*****************************************************************************************************
+// Configuración
+;*****************************************************************************************************
+// Tabla de Valores
+	TABLA7SEG: .DB 0x00, 0b0000_0110, 0b1011_11011, 0b0000_0001
+
+;*****************************************************************************************************
+Setup:
+    
+	LDI R16, (1 << CLKPCE)
+	STS CLKPR, R16			; Habilinado prescaler
+
+	LDI R16, 0b0000_0100
+	STS CLKPR, R16			; Prescaler de 16 fcpu = 1MHz
+	CALL Init_T0                               ; Inicializar el Timer 0
+
+    LDI R17, 0b0011_1111                        ; Habilitar pines del puerto B como salida
+    OUT DDRB, R17
+
+    LDI R17, 0b0011_1111                        ; Habilitar pines del puerto C como salida
+    OUT DDRC, R17
+
+    LDI R17, 0b0000_1111                        ; Habilitar pines del puerto D como entrada
+    OUT DDRD, R17
+
+
+    LDI R20, 0x00                           ; Inicializar contador de 4 bits
+
+LOOP:
+	
+	LDI R18, 2
+	LDI ZH, HIGH(TABLA7SEG << 1)
+	LDI ZL, LOW(TABLA7SEG << 1)
+	ADD ZL, R18
+	LPM R18, Z
+
+	OUT PORTB, R18
+
+    IN R16, TIFR0
+    CPI R16, (1 << TOV0) 
+    BRNE LOOP            ; Esperar si no está seteada
+	LDI R16, 100     ; Valor de desbordamiento para 100 ms
+    OUT TCNT0, R16
+    SBI TIFR0, TOV0		; Reinicia el bit TOV0
+
+    INC R20
+	OUT PORTC, R20 ; Actualizar puerto C con el valor del contador
+    CPI R20, 16        ; Contador de 4 bits, por lo que reiniciar a 0 después de 15 
+    BREQ RESET_COUNTER
+
+    RJMP LOOP
+
+RESET_COUNTER:
+    CLR R20
+
+    OUT PORTC, R20 ; Actualizar puerto C con el valor del contador
+
+    RJMP LOOP
+
+Init_T0:
+
+    LDI R16, 0
+    OUT TCCR0A, R16        ; Modo normal 
+
+    LDI R16, (1 << CS02) | (1 << CS00)    ; Configurar el prescaler a 1024
+    OUT TCCR0B, R16
+
+	LDI R16, 100     ; Valor de desbordamiento para 100 ms
+    OUT TCNT0, R16
+
+    RET
