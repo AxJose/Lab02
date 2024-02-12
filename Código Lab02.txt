@@ -1,0 +1,143 @@
+;
+; PreLab02.asm
+;
+; Author : Adrián Pascual
+
+;*****************************************************************************************************
+.include "M328PDEF.inc"
+.cseg
+.org 0x00
+;*****************************************************************************************************
+; Stack
+;*****************************************************************************************************
+LDI R16, LOW(RAMEND)
+OUT SPL, R16
+LDI R17, HIGH(RAMEND)
+OUT SPH, R17
+;*****************************************************************************************************
+// Configuración
+;*****************************************************************************************************
+// Tabla de Valores		0b0gfe_dcba
+	TABLA7SEG: .DB 0b0011_1111, 0b0000_0110 , 0b0101_1011, 0b0100_1111, 0b0110_0110, 0b0110_1101, 0b0111_1101, 0b0000_0111, 0b0111_1111, 0b0110_0111, 0b0111_0111, 0b0111_1100,	0b0011_1001, 0b0101_1110, 0b0111_1001, 0b0111_0001
+	;					#0			#1  			#2			#3			#4				#5			 #6			#7	 		 #8 			#9			#A			#b			  #C			#d		 #E			#F
+		
+;*****************************************************************************************************
+	LDI R18, 0x00
+Setup:
+
+	LDI R16, (1 << CLKPCE)
+	STS CLKPR, R16			; Habilinado prescaler
+
+	LDI R16, 0b0000_0110
+	STS CLKPR, R16			; Prescaler de 16 fcpu = 1MHz
+	CALL Init_T0                               ; Inicializar el Timer 0
+
+    LDI R17, 0b1111_0000                        ; Habilitar pines del puerto B como entrada
+    OUT DDRB, R17
+
+	LDI R17, 0b0000_1111						; Habilitar Pull ups
+	OUT PORTB, R17
+
+    LDI R17, 0b0011_1111                        ; Habilitar pines del puerto C como salida
+    OUT DDRC, R17
+
+    LDI R17, 0b1111_1111                        ; Habilitar pines del puerto D como salida
+    OUT DDRD, R17
+
+    LDI R20, 0x00								; Inicializar contador de 4 bits
+	OUT PORTD, R20
+	STS UCSR0B, R20
+
+	LDI R21, 0x3F				; Inicializar contador de incrementar o decrementar
+	LDI R17, 0x0F // Estado inicial
+	LDI R27, 0x0E // Comparación para incrementar contador 1
+	LDI R29, 0x0D // Comparación para decrementar contador 1
+	RJMP Display
+LOOP1:
+	IN R16, TIFR0
+    CPI R16, (1 << TOV0) 
+    BRNE LOOP1            ; Esperar si no está seteada
+	LDI R16, 0     ; Valor de desbordamiento para 100 ms
+    OUT TCNT0, R16
+    SBI TIFR0, TOV0		; Reinicia el bit TOV0
+
+    INC R20
+	OUT PORTC, R20 ; Actualizar puerto C con el valor del contador
+    CPI R20, 16        ; Contador de 4 bits, por lo que reiniciar a 0 después de 15 
+    BREQ RESET_COUNTER
+
+    RJMP LOOP
+
+RESET_COUNTER:
+    CLR R20
+
+    OUT PORTC, R20 ; Actualizar puerto C con el valor del contador
+
+    RJMP LOOP
+
+LOOP:
+	
+	IN R19, PINB
+	CP R17, R19
+	BREQ LOOP1
+	CALL DELAY
+	IN R19, PINB
+	CP R27, R19
+	BREQ INCREMENTAR
+	CP R29, R19
+	BREQ DECREMENTAR
+	RJMP Setup
+
+Display:
+
+	LDI ZH, HIGH(TABLA7SEG << 1)
+	LDI ZL, LOW(TABLA7SEG << 1)
+	ADD ZL, R18
+	LPM R21, Z
+
+	OUT PORTD, R21
+	RJMP LOOP
+
+Init_T0:
+
+    LDI R16, 0
+    OUT TCCR0A, R16        ; Modo normal 
+
+    LDI R16, (1 << CS02) | (1 << CS00)    ; Configurar el prescaler a 1024
+    OUT TCCR0B, R16
+
+    RET
+
+INCREMENTAR:
+	IN R17, PINB
+	INC R21
+	INC R18
+	CPI R18, 16
+	BREQ Keep_On
+	BRNE Display
+
+DECREMENTAR:
+	IN R17, PINB
+	; Decrementa el contador 2
+	DEC R21
+	DEC R18
+	CPI R18, 0xFF
+	BREQ Reset
+	RJMP Display
+
+Keep_On:
+	LDI R18, 15
+	LDI R21, 0x29
+	RJMP Display
+Reset:
+	LDI R21, 0x3F
+	LDI R18, 0x00
+	RJMP Display
+
+DELAY:
+	LDI R31, 10
+LOOP_DELAY:
+	DEC R31
+	CPI R31, 0
+	BRNE LOOP_DELAY
+	RET
